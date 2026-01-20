@@ -3,12 +3,21 @@ const fs = require('fs');
 const zlib = require('zlib');
 const csv = require('csv-parser');
 const { neon } = require('@neondatabase/serverless');
+const ws = require('ws');
 
 const IMDB_RATINGS_URL = 'https://datasets.imdbws.com/title.ratings.tsv.gz';
 const TEMP_FILE = '/tmp/title.ratings.tsv.gz';
-const BATCH_SIZE = 1000;
+const BATCH_SIZE = 500;
 
-const sql = neon(process.env.DATABASE_URL || process.env.POSTGRES_URL);
+if (typeof WebSocket === 'undefined') {
+  global.WebSocket = ws;
+}
+
+const sql = neon(process.env.DATABASE_URL || process.env.POSTGRES_URL, {
+  fetchOptions: {
+    timeout: 30000
+  }
+});
 
 async function downloadFile(url, dest) {
   return new Promise((resolve, reject) => {
@@ -49,58 +58,68 @@ async function processData() {
   console.log('Processing data...');
   let batch = [];
   let count = 0;
+  const stream = fs.createReadStream(TEMP_FILE)
+    .pipe(zlib.createGunzip())
+    .pipe(csv({ separator: '\t' }));
 
   return new Promise((resolve, reject) => {
-    fs.createReadStream(TEMP_FILE)
-      .pipe(zlib.createGunzip())
-      .pipe(csv({ separator: '\t' }))
-      .on('data', async (row) => {
-        if (row.tconst && row.averageRating && row.numVotes) {
-          batch.push({
-            imdbId: row.tconst,
-            rating: parseFloat(row.averageRating),
-            numVotes: parseInt(row.numVotes)
-          });
+    stream.on('data', (row) => {
+      if (row.tconst && row.averageRating && row.numVotes) {
+        batch.push({
+          imdbId: row.tconst,
+          rating: parseFloat(row.averageRating),
+          numVotes: parseInt(row.numVotes)
+        });
 
-          if (batch.length >= BATCH_SIZE) {
-            const currentBatch = [...batch];
-            batch = [];
-            
-            try {
-              await insertBatch(currentBatch);
+        if (batch.length >= BATCH_SIZE) {
+          stream.pause();
+          const currentBatch = [...batch];
+          batch = [];
+          
+          insertBatch(currentBatch)
+            .then(() => {
               count += currentBatch.length;
               console.log(`Processed ${count} records...`);
-            } catch (error) {
+              stream.resume();
+            })
+            .catch((error) => {
               console.error('Error inserting batch:', error);
-            }
-          }
+              stream.resume();
+            });
         }
-      })
-      .on('end', async () => {
-        if (batch.length > 0) {
-          await insertBatch(batch);
-          count += batch.length;
-        }
-        console.log(`Completed! Total records: ${count}`);
-        fs.unlinkSync(TEMP_FILE);
-        resolve();
-      })
-      .on('error', reject);
+      }
+    })
+    .on('end', async () => {
+      if (batch.length > 0) {
+        await insertBatch(batch);
+        count += batch.length;
+      }
+      console.log(`Completed! Total records: ${count}`);
+      fs.unlinkSync(TEMP_FILE);
+      resolve();
+    })
+    .on('error', reject);
   });
 }
 
 async function insertBatch(batch) {
-  for (const item of batch) {
-    await sql`
-      INSERT INTO imdb_ratings (imdb_id, rating, num_votes, updated_at)
-      VALUES (${item.imdbId}, ${item.rating}, ${item.numVotes}, CURRENT_TIMESTAMP)
-      ON CONFLICT (imdb_id) 
-      DO UPDATE SET 
-        rating = EXCLUDED.rating,
-        num_votes = EXCLUDED.num_votes,
-        updated_at = CURRENT_TIMESTAMP
-    `;
-  }
+  if (batch.length === 0) return;
+  
+  const values = batch.map(item => 
+    `('${item.imdbId.replace(/'/g, "''")}', ${item.rating}, ${item.numVotes}, CURRENT_TIMESTAMP)`
+  ).join(',');
+
+  const query = `
+    INSERT INTO imdb_ratings (imdb_id, rating, num_votes, updated_at)
+    VALUES ${values}
+    ON CONFLICT (imdb_id) 
+    DO UPDATE SET 
+      rating = EXCLUDED.rating,
+      num_votes = EXCLUDED.num_votes,
+      updated_at = CURRENT_TIMESTAMP
+  `;
+
+  await sql(query);
 }
 
 processData()
