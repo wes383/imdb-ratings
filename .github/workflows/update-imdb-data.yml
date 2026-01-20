@@ -1,0 +1,31 @@
+name: Update IMDb Data
+
+on:
+  schedule:
+    - cron: '30 13 * * *'
+  workflow_dispatch:
+
+jobs:
+  update-data:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Update IMDb data
+        env:
+          POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
+        run: npm run update-data
+
+      - name: Notify on failure
+        if: failure()
+        run: echo "Data update failed. Please check the logs."

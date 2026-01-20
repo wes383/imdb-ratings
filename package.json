@@ -1,0 +1,15 @@
+{
+  "name": "imdb-rating-api",
+  "version": "1.0.0",
+  "description": "IMDb rating API using Vercel Serverless Functions and Postgres",
+  "scripts": {
+    "dev": "vercel dev",
+    "update-data": "node scripts/update-imdb-data.js"
+  },
+  "dependencies": {
+    "@vercel/postgres": "^0.5.1"
+  },
+  "devDependencies": {
+    "csv-parser": "^3.0.0"
+  }
+}

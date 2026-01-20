@@ -1,0 +1,116 @@
+const https = require('https');
+const fs = require('fs');
+const zlib = require('zlib');
+const csv = require('csv-parser');
+const { sql } = require('@vercel/postgres');
+
+const IMDB_RATINGS_URL = 'https://datasets.imdbws.com/title.ratings.tsv.gz';
+const TEMP_FILE = '/tmp/title.ratings.tsv.gz';
+const BATCH_SIZE = 1000;
+
+async function downloadFile(url, dest) {
+  return new Promise((resolve, reject) => {
+    const file = fs.createWriteStream(dest);
+    https.get(url, (response) => {
+      response.pipe(file);
+      file.on('finish', () => {
+        file.close();
+        resolve();
+      });
+    }).on('error', (err) => {
+      fs.unlink(dest, () => {});
+      reject(err);
+    });
+  });
+}
+
+async function createTable() {
+  await sql`
+    CREATE TABLE IF NOT EXISTS imdb_ratings (
+      imdb_id VARCHAR(10) PRIMARY KEY,
+      rating DECIMAL(3,1) NOT NULL,
+      num_votes INTEGER NOT NULL,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `;
+  
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_rating ON imdb_ratings(rating)
+  `;
+}
+
+async function processData() {
+  console.log('Downloading IMDb ratings dataset...');
+  await downloadFile(IMDB_RATINGS_URL, TEMP_FILE);
+  
+  console.log('Creating table...');
+  await createTable();
+  
+  console.log('Processing data...');
+  let batch = [];
+  let count = 0;
+
+  return new Promise((resolve, reject) => {
+    fs.createReadStream(TEMP_FILE)
+      .pipe(zlib.createGunzip())
+      .pipe(csv({ separator: '\t' }))
+      .on('data', async (row) => {
+        if (row.tconst && row.averageRating && row.numVotes) {
+          batch.push({
+            imdbId: row.tconst,
+            rating: parseFloat(row.averageRating),
+            numVotes: parseInt(row.numVotes)
+          });
+
+          if (batch.length >= BATCH_SIZE) {
+            const currentBatch = [...batch];
+            batch = [];
+            
+            try {
+              await insertBatch(currentBatch);
+              count += currentBatch.length;
+              console.log(`Processed ${count} records...`);
+            } catch (error) {
+              console.error('Error inserting batch:', error);
+            }
+          }
+        }
+      })
+      .on('end', async () => {
+        if (batch.length > 0) {
+          await insertBatch(batch);
+          count += batch.length;
+        }
+        console.log(`Completed! Total records: ${count}`);
+        fs.unlinkSync(TEMP_FILE);
+        resolve();
+      })
+      .on('error', reject);
+  });
+}
+
+async function insertBatch(batch) {
+  const values = batch.map(item => 
+    `('${item.imdbId}', ${item.rating}, ${item.numVotes}, CURRENT_TIMESTAMP)`
+  ).join(',');
+
+  await sql.query(`
+    INSERT INTO imdb_ratings (imdb_id, rating, num_votes, updated_at)
+    VALUES ${values}
+    ON CONFLICT (imdb_id) 
+    DO UPDATE SET 
+      rating = EXCLUDED.rating,
+      num_votes = EXCLUDED.num_votes,
+      updated_at = CURRENT_TIMESTAMP
+  `);
+}
+
+processData()
+  .then(() => {
+    console.log('Data update completed successfully');
+    process.exit(0);
+  })
+  .catch((error) => {
+    console.error('Error updating data:', error);
+    process.exit(1);
+  });
