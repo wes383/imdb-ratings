@@ -2,11 +2,13 @@ const https = require('https');
 const fs = require('fs');
 const zlib = require('zlib');
 const csv = require('csv-parser');
-const { sql } = require('@vercel/postgres');
+const { neon } = require('@neondatabase/serverless');
 
 const IMDB_RATINGS_URL = 'https://datasets.imdbws.com/title.ratings.tsv.gz';
 const TEMP_FILE = '/tmp/title.ratings.tsv.gz';
 const BATCH_SIZE = 1000;
+
+const sql = neon(process.env.DATABASE_URL || process.env.POSTGRES_URL);
 
 async function downloadFile(url, dest) {
   return new Promise((resolve, reject) => {
@@ -34,9 +36,7 @@ async function createTable() {
     )
   `;
   
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_rating ON imdb_ratings(rating)
-  `;
+  await sql`CREATE INDEX IF NOT EXISTS idx_rating ON imdb_ratings(rating)`;
 }
 
 async function processData() {
@@ -90,19 +90,17 @@ async function processData() {
 }
 
 async function insertBatch(batch) {
-  const values = batch.map(item => 
-    `('${item.imdbId}', ${item.rating}, ${item.numVotes}, CURRENT_TIMESTAMP)`
-  ).join(',');
-
-  await sql.query(`
-    INSERT INTO imdb_ratings (imdb_id, rating, num_votes, updated_at)
-    VALUES ${values}
-    ON CONFLICT (imdb_id) 
-    DO UPDATE SET 
-      rating = EXCLUDED.rating,
-      num_votes = EXCLUDED.num_votes,
-      updated_at = CURRENT_TIMESTAMP
-  `);
+  for (const item of batch) {
+    await sql`
+      INSERT INTO imdb_ratings (imdb_id, rating, num_votes, updated_at)
+      VALUES (${item.imdbId}, ${item.rating}, ${item.numVotes}, CURRENT_TIMESTAMP)
+      ON CONFLICT (imdb_id) 
+      DO UPDATE SET 
+        rating = EXCLUDED.rating,
+        num_votes = EXCLUDED.num_votes,
+        updated_at = CURRENT_TIMESTAMP
+    `;
+  }
 }
 
 processData()

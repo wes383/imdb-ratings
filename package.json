@@ -7,9 +7,7 @@
     "update-data": "node scripts/update-imdb-data.js"
   },
   "dependencies": {
-    "@vercel/postgres": "^0.5.1"
-  },
-  "devDependencies": {
+    "@neondatabase/serverless": "^0.9.0",
     "csv-parser": "^3.0.0"
   }
 }

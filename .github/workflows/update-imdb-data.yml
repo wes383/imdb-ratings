@@ -23,7 +23,7 @@ jobs:
 
       - name: Update IMDb data
         env:
-          POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: npm run update-data
 
       - name: Notify on failure

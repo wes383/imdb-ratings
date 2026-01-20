@@ -1,4 +1,6 @@
-import { sql } from '@vercel/postgres';
+import { neon } from '@neondatabase/serverless';
+
+const sql = neon(process.env.DATABASE_URL || process.env.POSTGRES_URL);
 
 export default async function handler(req, res) {
   if (req.method !== 'GET') {
@@ -20,13 +22,13 @@ export default async function handler(req, res) {
       WHERE imdb_id = ${imdbId}
     `;
 
-    if (result.rows.length === 0) {
+    if (result.length === 0) {
       return res.status(404).json({ 
         error: 'IMDb ID not found' 
       });
     }
 
-    const data = result.rows[0];
+    const data = result[0];
     
     return res.status(200).json({
       imdbId: data.imdb_id,
