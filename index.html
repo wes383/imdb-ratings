@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IMDb Rating API</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=JetBrains+Mono&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background: white;
+            padding: 20px;
+        }
+        code {
+            font-family: 'JetBrains Mono', monospace;
+            color: #0066cc;
+        }
+        .subtitle {
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <h1>IMDb Rating API</h1>
+    <p class="subtitle">Query IMDb movie ratings by ID</p>
+    <p>Endpoint: <code>/api/rating</code></p>
+    <p>Method: <code>GET</code></p>
+    <p>Parameter: <code>imdbId</code> - IMDb ID (tt + 7-8 digits)</p>
+    <p>Response Example:</p>
+    <pre><code>{
+  "imdbId": "tt12637874",
+  "rating": 8.3,
+  "numVotes": 366647,
+  "updatedAt": "2026-01-25T13:50:30.998Z"
+}</code></pre>
+    <p class="subtitle">For personal use. Information courtesy of IMDb. Used with permission.</p>
+    <p class="subtitle">Rating data is not synchronized with the official website in real-time. Usually updated daily.</p>
+</body>
+</html>
